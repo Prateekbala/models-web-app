@@ -1,0 +1,18 @@
+{{- if and .Values.istio.enabled .Values.istio.authorizationPolicy.enabled }}
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "kserve-models-web-app.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "kserve-models-web-app.labels" . | nindent 4 }}
+spec:
+  action: {{ .Values.istio.authorizationPolicy.action }}
+  selector:
+    matchLabels:
+      {{- include "kserve-models-web-app.selectorLabels" . | nindent 6 }}
+  rules:
+  {{- with .Values.istio.authorizationPolicy.rules }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

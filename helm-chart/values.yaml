@@ -1,0 +1,211 @@
+# Default values for kserve-models-web-app.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/kserve/models-web-app
+  pullPolicy: Always
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# RBAC configuration
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod Security Context
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container Security Context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  # nodePort: 30080  # Only used if type is NodePort
+
+# Probes configuration
+probes:
+  liveness:
+    path: /healthz/liveness
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 1
+    failureThreshold: 3
+    successThreshold: 1
+  readiness:
+    path: /healthz/readiness
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 1
+    failureThreshold: 3
+    successThreshold: 1
+
+# Application configuration - these will be added to the ConfigMap
+config:
+  APP_DISABLE_AUTH: "True"
+  GRAFANA_PREFIX: "/grafana"
+  GRAFANA_CPU_MEMORY_DB: "db/knative-serving-revision-cpu-and-memory-usage"
+  GRAFANA_HTTP_REQUESTS_DB: "db/knative-serving-revision-http-requests"
+  # For Kubeflow integration, uncomment these:
+  # USERID_HEADER: "kubeflow-userid"
+  # APP_PREFIX: "/kserve-endpoints"
+
+# Istio configuration
+istio:
+  enabled: false
+  virtualService:
+    gateways:
+      - knative-serving/knative-ingress-gateway
+    hosts:
+      - "*"
+    uriPrefix: "/kserve-endpoints/"
+    rewrite:
+      enabled: true
+      uri: "/"
+  authorizationPolicy:
+    enabled: false
+    action: ALLOW
+    rules:
+      - from:
+        - source:
+            principals:
+            - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+
+# Kubeflow specific configuration (when deploying in Kubeflow)
+kubeflow:
+  enabled: false
+  # When enabled, this will override some of the default settings
+  gateway: kubeflow/kubeflow-gateway
+  # Automatically configure for Kubeflow deployment
+  autoConfig: true
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Autoscaling configuration
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+  # behavior:
+  #   scaleDown:
+  #     stabilizationWindowSeconds: 300
+  #     policies:
+  #     - type: Percent
+  #       value: 100
+  #       periodSeconds: 15
+  #   scaleUp:
+  #     stabilizationWindowSeconds: 0
+  #     policies:
+  #     - type: Percent
+  #       value: 100
+  #       periodSeconds: 15
+  #     - type: Pods
+  #       value: 4
+  #       periodSeconds: 60
+  #     selectPolicy: Max
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  # minAvailable: 1
+  # maxUnavailable: 1
+
+# Network Policy
+networkPolicy:
+  enabled: false
+  ingress:
+    enabled: true
+    rules: []
+    # Example:
+    # - from:
+    #   - namespaceSelector:
+    #       matchLabels:
+    #         name: istio-system
+    #   ports:
+    #   - protocol: TCP
+    #     port: 5000
+  egress:
+    enabled: true
+    rules: []
+    # Example: Allow access to specific services
+    # - to:
+    #   - namespaceSelector:
+    #       matchLabels:
+    #         name: kserve
+    #   ports:
+    #   - protocol: TCP
+    #     port: 80
+
+# Monitoring configuration
+monitoring:
+  # Prometheus ServiceMonitor
+  serviceMonitor:
+    enabled: false
+    # Labels to add to the ServiceMonitor
+    labels: {}
+    # Annotations to add to the ServiceMonitor
+    annotations: {}
+    # Path to scrape metrics from
+    path: /metrics
+    # Scrape interval
+    interval: 30s
+    # Scrape timeout
+    scrapeTimeout: 10s
+    # Metric relabelings
+    metricRelabelings: []
+    # Relabelings
+    relabelings: []
+  
+  # Prometheus alerting rules
+  prometheusRule:
+    enabled: false
+    # Labels to add to the PrometheusRule
+    labels: {}
+    # Annotations to add to the PrometheusRule
+    annotations: {}
+    # Additional custom rules
+    rules: []

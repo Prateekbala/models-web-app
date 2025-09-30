@@ -1,0 +1,39 @@
+suite: test values scenarios
+templates:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - rbac.yaml
+  - virtualservice.yaml
+  - authorizationpolicy.yaml
+values:
+  - ../values-kubeflow.yaml
+tests:
+  - it: should render correctly with Kubeflow values
+    asserts:
+      # Check deployment has Istio sidecar injection
+      - equal:
+          path: spec.template.metadata.annotations["sidecar.istio.io/inject"]
+          value: "true"
+        template: deployment.yaml
+      
+      # Check configmap has Kubeflow-specific config
+      - equal:
+          path: data.USERID_HEADER
+          value: "kubeflow-userid"
+        template: configmap.yaml
+      - equal:
+          path: data.APP_PREFIX
+          value: "/kserve-endpoints"
+        template: configmap.yaml
+      
+      # Check VirtualService is configured for Kubeflow
+      - equal:
+          path: spec.gateways[0]
+          value: "kubeflow/kubeflow-gateway"
+        template: virtualservice.yaml
+      
+      # Check AuthorizationPolicy is created
+      - isKind:
+          of: AuthorizationPolicy
+        template: authorizationpolicy.yaml

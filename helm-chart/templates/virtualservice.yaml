@@ -1,0 +1,27 @@
+{{- if .Values.istio.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "kserve-models-web-app.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "kserve-models-web-app.labels" . | nindent 4 }}
+spec:
+  gateways:
+    {{- toYaml .Values.istio.virtualService.gateways | nindent 4 }}
+  hosts:
+    {{- toYaml .Values.istio.virtualService.hosts | nindent 4 }}
+  http:
+  - match:
+    - uri:
+        prefix: {{ .Values.istio.virtualService.uriPrefix }}
+    {{- if .Values.istio.virtualService.rewrite.enabled }}
+    rewrite:
+      uri: {{ .Values.istio.virtualService.rewrite.uri }}
+    {{- end }}
+    route:
+    - destination:
+        host: {{ include "kserve-models-web-app.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+        port:
+          number: {{ .Values.service.port }}
+{{- end }}

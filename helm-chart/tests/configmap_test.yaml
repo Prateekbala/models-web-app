@@ -1,0 +1,52 @@
+suite: test configmap
+templates:
+  - configmap.yaml
+tests:
+  - it: should create configmap with default values
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kserve-models-web-app-config
+      - equal:
+          path: data.APP_DISABLE_AUTH
+          value: "True"
+      - equal:
+          path: data.GRAFANA_PREFIX
+          value: "/grafana"
+      - equal:
+          path: data.GRAFANA_CPU_MEMORY_DB
+          value: "db/knative-serving-revision-cpu-and-memory-usage"
+      - equal:
+          path: data.GRAFANA_HTTP_REQUESTS_DB
+          value: "db/knative-serving-revision-http-requests"
+
+  - it: should include custom config values
+    set:
+      config:
+        APP_DISABLE_AUTH: "False"
+        CUSTOM_CONFIG: "custom-value"
+        USERID_HEADER: "kubeflow-userid"
+    asserts:
+      - equal:
+          path: data.APP_DISABLE_AUTH
+          value: "False"
+      - equal:
+          path: data.CUSTOM_CONFIG
+          value: "custom-value"
+      - equal:
+          path: data.USERID_HEADER
+          value: "kubeflow-userid"
+
+  - it: should have correct labels
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: kserve-models-web-app
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: RELEASE-NAME
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: kserve-models-web-app

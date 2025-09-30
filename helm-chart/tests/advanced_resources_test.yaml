@@ -1,0 +1,116 @@
+suite: test advanced resources
+templates:
+  - hpa.yaml
+  - poddisruptionbudget.yaml
+  - networkpolicy.yaml
+  - servicemonitor.yaml
+  - prometheusrule.yaml
+tests:
+  - it: should not create HPA when autoscaling disabled
+    set:
+      autoscaling.enabled: false
+    template: hpa.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create HPA when autoscaling enabled
+    set:
+      autoscaling.enabled: true
+      autoscaling.minReplicas: 1
+      autoscaling.maxReplicas: 10
+      autoscaling.targetCPUUtilizationPercentage: 80
+    template: hpa.yaml
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: spec.minReplicas
+          value: 1
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+      - equal:
+          path: spec.metrics[0].resource.target.averageUtilization
+          value: 80
+
+  - it: should not create PDB when disabled
+    set:
+      podDisruptionBudget.enabled: false
+    template: poddisruptionbudget.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create PDB when enabled
+    set:
+      podDisruptionBudget.enabled: true
+      podDisruptionBudget.minAvailable: 1
+    template: poddisruptionbudget.yaml
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+
+  - it: should not create NetworkPolicy when disabled
+    set:
+      networkPolicy.enabled: false
+    template: networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create NetworkPolicy when enabled
+    set:
+      networkPolicy.enabled: true
+      networkPolicy.ingress.enabled: true
+      networkPolicy.egress.enabled: true
+    template: networkpolicy.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - contains:
+          path: spec.policyTypes
+          content: Ingress
+      - contains:
+          path: spec.policyTypes
+          content: Egress
+
+  - it: should not create ServiceMonitor when disabled
+    set:
+      monitoring.serviceMonitor.enabled: false
+    template: servicemonitor.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create ServiceMonitor when enabled
+    set:
+      monitoring.serviceMonitor.enabled: true
+    template: servicemonitor.yaml
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+      - equal:
+          path: spec.endpoints[0].port
+          value: http
+
+  - it: should not create PrometheusRule when disabled
+    set:
+      monitoring.prometheusRule.enabled: false
+    template: prometheusrule.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should create PrometheusRule when enabled
+    set:
+      monitoring.prometheusRule.enabled: true
+    template: prometheusrule.yaml
+    asserts:
+      - isKind:
+          of: PrometheusRule
+      - isNotEmpty:
+          path: spec.groups[0].rules

@@ -1,0 +1,73 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kserve-models-web-app.fullname" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "kserve-models-web-app.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.monitoring.prometheusRule.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+  - name: {{ include "kserve-models-web-app.fullname" . }}.rules
+    rules:
+    - alert: KServeModelsWebAppDown
+      expr: up{job="{{ include "kserve-models-web-app.fullname" . }}"} == 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "KServe Models Web App is down"
+        description: "KServe Models Web App has been down for more than 5 minutes."
+    
+    - alert: KServeModelsWebAppHighErrorRate
+      expr: |
+        (
+          rate(http_requests_total{job="{{ include "kserve-models-web-app.fullname" . }}", status=~"5.."}[5m])
+          /
+          rate(http_requests_total{job="{{ include "kserve-models-web-app.fullname" . }}"}[5m])
+        ) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate in KServe Models Web App"
+        description: "Error rate is above 10% for more than 5 minutes."
+    
+    - alert: KServeModelsWebAppHighMemoryUsage
+      expr: |
+        container_memory_usage_bytes{pod=~"{{ include "kserve-models-web-app.fullname" . }}-.*"}
+        /
+        container_spec_memory_limit_bytes{pod=~"{{ include "kserve-models-web-app.fullname" . }}-.*"}
+        > 0.9
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage in KServe Models Web App"
+        description: "Memory usage is above 90% for more than 10 minutes."
+    
+    - alert: KServeModelsWebAppHighCPUUsage
+      expr: |
+        rate(container_cpu_usage_seconds_total{pod=~"{{ include "kserve-models-web-app.fullname" . }}-.*"}[5m])
+        /
+        container_spec_cpu_quota{pod=~"{{ include "kserve-models-web-app.fullname" . }}-.*"}
+        * container_spec_cpu_period{pod=~"{{ include "kserve-models-web-app.fullname" . }}-.*"}
+        > 0.9
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage in KServe Models Web App"
+        description: "CPU usage is above 90% for more than 10 minutes."
+    
+    {{- with .Values.monitoring.prometheusRule.rules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

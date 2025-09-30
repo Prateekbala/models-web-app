@@ -1,0 +1,43 @@
+# Example values for production deployment
+# Use this with: helm install -f values-production.yaml
+
+replicaCount: 3
+
+image:
+  tag: "v0.11.1"  # Use a specific version instead of latest
+  pullPolicy: IfNotPresent
+
+# Resource limits for production
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Enable authentication in production
+config:
+  APP_DISABLE_AUTH: "False"
+  GRAFANA_PREFIX: "/grafana"
+  GRAFANA_CPU_MEMORY_DB: "db/knative-serving-revision-cpu-and-memory-usage"
+  GRAFANA_HTTP_REQUESTS_DB: "db/knative-serving-revision-http-requests"
+
+# Production service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Pod disruption budget friendly settings
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - kserve-models-web-app
+        topologyKey: kubernetes.io/hostname

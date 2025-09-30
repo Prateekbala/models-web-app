@@ -1,0 +1,46 @@
+# Values for development/testing environment
+# Use this with: helm install -f values-development.yaml
+
+# Development settings
+replicaCount: 1
+
+image:
+  tag: "latest"
+  pullPolicy: Always
+
+# Keep authentication disabled for easier testing
+config:
+  APP_DISABLE_AUTH: "True"
+  GRAFANA_PREFIX: "/grafana"
+  GRAFANA_CPU_MEMORY_DB: "db/knative-serving-revision-cpu-and-memory-usage"
+  GRAFANA_HTTP_REQUESTS_DB: "db/knative-serving-revision-http-requests"
+  # Add debug configuration
+  LOG_LEVEL: "DEBUG"
+
+# Use NodePort for easy local access
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30080
+
+# Lower resource requirements for development
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Disable security context restrictions for easier debugging
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  # Allow running as root for debugging (not recommended for production)
+  # runAsUser: 0
+
+# Add annotations for debugging
+podAnnotations:
+  debug.kserve.io/environment: "development"
