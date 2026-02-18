@@ -23,6 +23,7 @@ def get_config():
             "grafanaHttpRequestsDb": os.environ.get(
                 "GRAFANA_HTTP_REQUESTS_DB", "db/knative-serving-revision-http-requests"
             ),
+            "sseEnabled": os.environ.get("SSE_ENABLED", "true").lower() == "true",
         }
 
         log.info("Configuration requested: %s", config)
@@ -75,3 +76,29 @@ def get_namespaces():
     except Exception as e:
         log.error("Error retrieving namespaces: %s", str(e))
         return api.failed_response("message", "Failed to retrieve namespaces"), 500
+
+
+@bp.route("/", methods=["GET"])
+def index():
+    """Serve the frontend index.html file."""
+    import os
+    from flask import send_from_directory, render_template_string
+
+    static_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/static"
+
+    # Try to load index.html from static directory
+    try:
+        with open(os.path.join(static_dir, "index.html"), "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        # Fallback: return a message if index.html not found
+        return """
+        <html>
+          <body style='font-family: sans-serif; text-align: center; margin-top: 50px'>
+            <h1>Models Web App</h1>
+            <p>Frontend is loading...</p>
+            <p>API Status: <a href='/api/config'>Check API Config</a></p>
+            <p>API is available at <code>/api/</code></p>
+          </body>
+        </html>
+        """

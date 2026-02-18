@@ -4,6 +4,16 @@ describe('Models Web App - Model Deployment Tests', () => {
     cy.fixture('namespaces').as('namespacesData');
     cy.fixture('inference-services').as('inferenceServicesData');
 
+    cy.intercept('GET', '/api/config', {
+      statusCode: 200,
+      body: {
+        grafanaPrefix: '/grafana',
+        grafanaCpuMemoryDb: 'db/knative-serving-revision-cpu-and-memory-usage',
+        grafanaHttpRequestsDb: 'db/knative-serving-revision-http-requests',
+        sseEnabled: true,
+      },
+    }).as('getConfig');
+
     // Set up default intercepts for all tests
     cy.intercept('GET', '/api/config/namespaces', { fixture: 'namespaces' }).as(
       'getNamespaces',
@@ -304,11 +314,15 @@ spec:
     });
 
     // Verify API call was made or that submission succeeded
-    cy.get('@createInferenceService.all', { timeout: 10000 }).then((interceptions: any) => {
-      if (interceptions.length > 0) {
-        expect((interceptions[0] as any).request.body).to.include('test-sklearn-model');
-      }
-    });
+    cy.get('@createInferenceService.all', { timeout: 10000 }).then(
+      (interceptions: any) => {
+        if (interceptions.length > 0) {
+          expect((interceptions[0] as any).request.body).to.include(
+            'test-sklearn-model',
+          );
+        }
+      },
+    );
 
     // Should navigate back to index page OR show success message
     cy.url({ timeout: 5000 }).then(url => {
@@ -364,7 +378,9 @@ metadata:
       .and($el => {
         const text = $el.text().toLowerCase();
         expect(text).to.satisfy((t: string) => {
-          return t.includes('yaml') || t.includes('parsing') || t.includes('error');
+          return (
+            t.includes('yaml') || t.includes('parsing') || t.includes('error')
+          );
         });
       });
 

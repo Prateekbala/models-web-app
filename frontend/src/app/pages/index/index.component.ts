@@ -1,6 +1,8 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { MWABackendService } from 'src/app/services/backend.service';
 import { MWANamespaceService } from 'src/app/services/mwa-namespace.service';
+import { SSEService } from 'src/app/services/sse.service';
+import { ConfigService } from 'src/app/services/config.service';
 import { Clipboard } from '@angular/cdk/clipboard';
 import {
   InferenceServiceK8s,
@@ -37,11 +39,14 @@ export class IndexComponent implements OnInit, OnDestroy {
   env = environment;
 
   namespaceSubscription = new Subscription();
+  sseSubscription = new Subscription();
   pollingSubscription = new Subscription();
 
-  currentNamespace: string | string[];
+  currentNamespace: string | string[] = '';
   config = defaultConfig;
   inferenceServices: InferenceServiceIR[] = [];
+  sseEnabled = true; // Default to SSE, will be updated from config
+  sseFailed = false; // Track if SSE has failed to avoid retry loops
 
   dashboardDisconnectedState = DashboardState.Disconnected;
 
@@ -73,11 +78,23 @@ export class IndexComponent implements OnInit, OnDestroy {
     private clipboard: Clipboard,
     public ns: NamespaceService,
     public mwaNamespace: MWANamespaceService,
+    private sse: SSEService,
     public poller: PollerService,
+    private configService: ConfigService,
   ) {}
 
   ngOnInit(): void {
-    // Reset the poller whenever the selected namespace changes
+    // Check if SSE is enabled from backend config
+    this.configService.getConfig().subscribe(
+      config => {
+        this.sseEnabled = config?.sseEnabled !== false; // Default to true if not specified
+      },
+      error => {
+        console.warn('Failed to load config, defaulting to SSE:', error);
+        this.sseEnabled = true;
+      },
+    );
+
     this.namespaceSubscription = this.mwaNamespace
       .getSelectedNamespace()
       .subscribe(ns => {
@@ -86,21 +103,27 @@ export class IndexComponent implements OnInit, OnDestroy {
         }
 
         this.currentNamespace = ns;
-        this.poll(ns);
+        if (this.sseEnabled && !this.sseFailed) {
+          this.startSSEWatch(ns);
+        } else {
+          this.poll(ns);
+        }
         this.newEndpointButton.namespaceChanged(ns, $localize`Endpoint`);
       });
 
-    // Initialize after setting up the subscription
     this.mwaNamespace.initialize().subscribe();
   }
 
   ngOnDestroy() {
     this.namespaceSubscription.unsubscribe();
+    this.sseSubscription.unsubscribe();
     this.pollingSubscription.unsubscribe();
   }
 
+  // Original polling method (fallback when SSE is disabled)
   public poll(ns: string | string[]) {
     this.pollingSubscription.unsubscribe();
+    this.sseSubscription.unsubscribe();
     this.inferenceServices = [];
 
     const request = this.backend.getInferenceServices(ns);
@@ -112,6 +135,103 @@ export class IndexComponent implements OnInit, OnDestroy {
       }) as any;
   }
 
+  public startSSEWatch(ns: string | string[]) {
+    this.pollingSubscription.unsubscribe();
+    this.sseSubscription.unsubscribe();
+    this.inferenceServices = [];
+
+    if (typeof ns === 'string') {
+      this.sseSubscription = this.sse
+        .watchInferenceServices<InferenceServiceK8s>(ns)
+        .subscribe({
+          next: event => {
+            switch (event.type) {
+              case 'INITIAL':
+                if (event.items) {
+                  this.inferenceServices = this.processIncomingData(
+                    event.items,
+                  );
+                }
+                break;
+              case 'ADDED':
+                if (event.object) {
+                  this.addInferenceService(event.object);
+                }
+                break;
+              case 'MODIFIED':
+                if (event.object) {
+                  this.updateInferenceService(event.object);
+                }
+                break;
+              case 'DELETED':
+                if (event.object) {
+                  this.removeInferenceService(event.object);
+                }
+                break;
+              case 'ERROR':
+                console.error('SSE error:', event.message);
+                break;
+            }
+          },
+          error: error => {
+            console.error(
+              'SSE connection failed, falling back to polling:',
+              error,
+            );
+            this.sseFailed = true;
+
+            const snackConfiguration: SnackBarConfig = {
+              data: {
+                msg: $localize`Real-time updates unavailable, using polling mode`,
+                snackType: SnackType.Warning,
+              },
+            };
+            this.snack.open(snackConfiguration);
+
+            // Automatically fall back to polling
+            this.poll(ns);
+          },
+        });
+    } else {
+      console.log('Multi-namespace view not supported by SSE, using polling');
+      this.poll(ns);
+    }
+  }
+
+  private addInferenceService(svc: InferenceServiceK8s) {
+    const svcCopy: InferenceServiceIR = JSON.parse(JSON.stringify(svc));
+    this.parseInferenceService(svcCopy);
+    this.inferenceServices = [...this.inferenceServices, svcCopy];
+  }
+
+  private updateInferenceService(svc: InferenceServiceK8s) {
+    const index = this.inferenceServices.findIndex(
+      s =>
+        s.metadata?.name === svc.metadata?.name &&
+        s.metadata?.namespace === svc.metadata?.namespace,
+    );
+
+    if (index !== -1) {
+      const svcCopy: InferenceServiceIR = JSON.parse(JSON.stringify(svc));
+      this.parseInferenceService(svcCopy);
+      this.inferenceServices = [
+        ...this.inferenceServices.slice(0, index),
+        svcCopy,
+        ...this.inferenceServices.slice(index + 1),
+      ];
+    }
+  }
+
+  private removeInferenceService(svc: InferenceServiceK8s) {
+    this.inferenceServices = this.inferenceServices.filter(
+      s =>
+        !(
+          s.metadata?.name === svc.metadata?.name &&
+          s.metadata?.namespace === svc.metadata?.namespace
+        ),
+    );
+  }
+
   // action handling functions
   public reactToAction(a: ActionEvent) {
     const inferenceService = a.data as InferenceServiceIR;
@@ -121,14 +241,16 @@ export class IndexComponent implements OnInit, OnDestroy {
         this.deleteClicked(inferenceService);
         break;
       case 'copy-link':
-        this.clipboard.copy(inferenceService.status.url);
-        const snackConfiguration: SnackBarConfig = {
-          data: {
-            msg: `Copied: ${inferenceService.status.url}`,
-            snackType: SnackType.Info,
-          },
-        };
-        this.snack.open(snackConfiguration);
+        if (inferenceService.status?.url) {
+          this.clipboard.copy(inferenceService.status.url);
+          const snackConfiguration: SnackBarConfig = {
+            data: {
+              msg: `Copied: ${inferenceService.status.url}`,
+              snackType: SnackType.Info,
+            },
+          };
+          this.snack.open(snackConfiguration);
+        }
         break;
       case 'name:link':
         /*
@@ -156,13 +278,13 @@ export class IndexComponent implements OnInit, OnDestroy {
 
     const dialogRef = this.confirmDialog.open('Endpoint', dialogConfiguration);
     const applyingSub = dialogRef.componentInstance.applying$.subscribe(
-      applying => {
+      (applying: boolean) => {
         if (!applying) {
           return;
         }
 
         this.backend.deleteInferenceService(inferenceService).subscribe(
-          dialogResponse => {
+          (dialogResponse: any) => {
             dialogRef.close(DIALOG_RESP.ACCEPT);
           },
           err => {
@@ -173,7 +295,7 @@ export class IndexComponent implements OnInit, OnDestroy {
       },
     );
 
-    dialogRef.afterClosed().subscribe(dialogResponse => {
+    dialogRef.afterClosed().subscribe((dialogResponse: any) => {
       applyingSub.unsubscribe();
 
       if (dialogResponse !== DIALOG_RESP.ACCEPT) {
@@ -205,17 +327,19 @@ export class IndexComponent implements OnInit, OnDestroy {
     inferenceService.ui.actions.delete =
       this.getDeletionActionStatus(inferenceService);
 
-    const predictorType = getPredictorType(inferenceService.spec.predictor);
-    const predictor = getPredictorExtensionSpec(
-      inferenceService.spec.predictor,
-    );
-    inferenceService.ui.predictorType = predictorType;
-    inferenceService.ui.runtimeVersion = predictor.runtimeVersion;
-    inferenceService.ui.storageUri = predictor.storageUri;
-    inferenceService.ui.protocolVersion = predictor.protocolVersion || 'v1';
+    if (inferenceService.spec) {
+      const predictorType = getPredictorType(inferenceService.spec.predictor);
+      const predictor = getPredictorExtensionSpec(
+        inferenceService.spec.predictor,
+      );
+      inferenceService.ui.predictorType = predictorType;
+      inferenceService.ui.runtimeVersion = predictor.runtimeVersion;
+      inferenceService.ui.storageUri = predictor.storageUri;
+      inferenceService.ui.protocolVersion = predictor.protocolVersion || 'v1';
+    }
     inferenceService.ui.link = {
-      text: inferenceService.metadata.name,
-      url: `/details/${inferenceService.metadata.namespace}/${inferenceService.metadata.name}`,
+      text: inferenceService.metadata?.name || '',
+      url: `/details/${inferenceService.metadata?.namespace}/${inferenceService.metadata?.name}`,
     };
   }
 
@@ -240,6 +364,6 @@ export class IndexComponent implements OnInit, OnDestroy {
     index: number,
     inferenceService: InferenceServiceK8s,
   ) {
-    return `${inferenceService.metadata.name}/${inferenceService.metadata.creationTimestamp}`;
+    return `${inferenceService.metadata?.name}/${inferenceService.metadata?.creationTimestamp}`;
   }
 }

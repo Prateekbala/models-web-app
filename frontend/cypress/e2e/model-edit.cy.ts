@@ -34,6 +34,17 @@ describe('Models Web App - Model Edit Tests', () => {
   };
 
   beforeEach(() => {
+    // Mock app configuration API
+    cy.intercept('GET', '/api/config', {
+      statusCode: 200,
+      body: {
+        grafanaPrefix: '/grafana',
+        grafanaCpuMemoryDb: 'db/knative-serving-revision-cpu-and-memory-usage',
+        grafanaHttpRequestsDb: 'db/knative-serving-revision-http-requests',
+        sseEnabled: true,
+      },
+    }).as('getConfig');
+
     // Mock namespaces API
     cy.intercept('GET', '/api/config/namespaces', {
       statusCode: 200,
